@@ -3,6 +3,7 @@ import re
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
+import radiators
 
 
 # Physical constants
@@ -145,38 +146,6 @@ def get_heats(T_hot, dT_hot, T_air, m_water, Q_water_m3s, Q_air_m3s):
     e = q_out / q_ideal if q_ideal > 0 else 0.0
     return q_out, e, C_min
 
-
-def ntu_method(Qwater, Qair):
-    Awater, Aair, Across, tubeA, tubeB, tubeN, Depth = radiator()
-    
-    Ch = Qwater * rhowater() * cwater()
-    Cc = Qair * rhoair() * cair()
-    C = min(Ch, Cc)
-    Cr = min(Cc, Ch) / max(Cc, Ch)
-    
-    # hwater
-    Dhydraulic = 4.0 * tubeA * tubeB / (2.0 * tubeA + 2.0 * tubeB)
-    vwater = Qwater / (tubeA * tubeB * tubeN)
-    Rewater = vwater * Dhydraulic / viscositywater()
-    Nuwater = 5.6
-    hwater = Nuwater * kwater() / Dhydraulic
-    
-    # hair
-    vair = Qair / Across
-    Reair = vair * Depth / viscosityair()
-    Prair = 0.7
-    Nuair = 0.664 * (Reair**0.5) * (Prair**0.33)
-    hair = Nuair * kair() / Depth
-    uair = 0.99 
-    
-    UA = 1.0 / (1.0 / (uair * hair * Aair) + 1.0 / (hwater * Awater))
-    NTU = UA / C
-    
-    # Cross flow, both fluids unmixed
-    e = 1.0 - np.exp((np.exp(-(NTU**0.78) * Cr) - 1.0) / (Cr * (NTU**-0.22)))
-    return e
-
-
 def func():
     filename = 'heater_test_2000ml_3ms_air_25Cair_8LPM.csv'
     data = np.loadtxt(f'datasets/{filename}', delimiter=',')
@@ -229,7 +198,7 @@ def func():
     for i in range(len(T_hot)):
         q_out[i], e[i], C_min_val = get_heats(T_hot[i], dT_hot[i], T_air, m_water, Q_water_m3s, Q_air_m3s)
 
-    e_ntu = ntu_method(Q_water_m3s, Q_air_m3s)
+    e_ntu = ntu_method(radiators.blackice280, Q_water_m3s, Q_air_m3s)[0]
     
     # Correct NTU heat rejection formula: q = epsilon * C_min * (T_hot_in - T_cold_in)
     q_out_ntu = [e_ntu * C_min_val * (T - T_air) for T in T_hot]

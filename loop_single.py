@@ -6,7 +6,7 @@ from scipy.optimize import curve_fit, fsolve
 from loop_components import emrax228, cm200dx, blackice_280, boschePCE, boschePCEpower
 from loop_helper import solve_system, draw_system
 from radiator_helper import sim_rad_in_loop
-import radiator_springs
+import radiators
 
 # Heat load for radiator maths
 
@@ -36,7 +36,7 @@ x = np.arange(0, 30.1, 0.1)
 system_op_lpm = solve_system(x, pump, system)
 pump_op_power = pump_power(system_op_lpm)
 
-Q_cold_op = sim_rad_in_loop(radiator_springs.blackice_280, 1500 * 1.25, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0)
+Q_cold_op = sim_rad_in_loop(radiators.blackice_280, 1500 * 1.25, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0)
 fan_op_power = Q_cold_op /  (0.0004719474 * 300) * 3.6 * 12 # assuming linear. need to make a fan libray at some point
 system_op_power = pump_op_power + fan_op_power
 

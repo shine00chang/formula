@@ -25,7 +25,7 @@ def sim_rad_in_loop(rad, q_in, Q_hot, T_hot_req, T_cold, *, plot=True):
     C_min = np.minimum(C_air, C_water)
 
     # Evaluate effectiveness (assuming ntu_method returns effectiveness epsilon)
-    e = np.array([ntu_method(rad, Q_hot, Q_cold_i) for Q_cold_i in Q_cold])
+    e = np.array([ntu_method(rad, Q_hot, Q_cold_i)[0] for Q_cold_i in Q_cold])
     
     # Calculate steady-state coolant inlet temperature: T_in = T_ambient + q_in / (epsilon * C_min)
     T_steady = T_cold + (q_in / (e * C_min))
