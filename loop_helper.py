@@ -14,12 +14,12 @@ def constricted_v(lpm: float, d1: float, d2: float) -> float:
 
 def p_major(lpm: float, l: float, d: float, print_out: float = 0.0) -> float:
     if print_out > 0:
-        print(f'Pipe dimensions: {TubingPressureHelper.m_to_in(d):.2f}"ID for {TubingPressureHelper.m_to_in(l):.2f}" @ {lpm:.2f} LPM')
+        print(f'Pipe dimensions: {m_to_in(d):.2f}"ID for {m_to_in(l):.2f}" @ {lpm:.2f} LPM')
         
     rho = 1000.0
     
     a = math.pi * d * d / 4.0
-    v = TubingPressureHelper.lpm_to_m3s(lpm) / a  # flow rate from lpm to m^3/s
+    v = lpm_to_m3s(lpm) / a  # flow rate from lpm to m^3/s
     
     f = 0.02  # attained from moody table
     
@@ -32,12 +32,12 @@ def p_major(lpm: float, l: float, d: float, print_out: float = 0.0) -> float:
 
 def p_minor(lpm: float, k: float, d: float, print_out: float = 0.0) -> float:
     if print_out > 0:
-        print(f'Minor coefficient: {k:.2f} for {TubingPressureHelper.m_to_in(d):.2f}"ID @ {lpm:.2f} LPM')
+        print(f'Minor coefficient: {k:.2f} for {m_to_in(d):.2f}"ID @ {lpm:.2f} LPM')
         
     rho = 1000.0
     
     a = math.pi * d * d / 4.0
-    v = TubingPressureHelper.lpm_to_m3s(lpm) / a
+    v = lpm_to_m3s(lpm) / a
     
     p = k * rho * v * v / 2.0
     
@@ -56,6 +56,7 @@ def solve_system(x, pump, system):
             system_op_lpm = lpm
 
     return system_op_lpm
+
 
 def draw_system(ax, x, pump, system, system_op_lpm):
 
