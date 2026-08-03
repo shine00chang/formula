@@ -62,7 +62,7 @@ def pump_power(lpm):
 x = np.arange(0, 30.1, 0.1)
 (system_lpm, system_p, system_op_lpm, branch1_lpm, branch2_lpm, choking_cutoff) = solve_branches(x, pump, cm200dx, branch1, branch2)
 
-Q_cold_op = sim_rad_in_loop(radiators.blackice_280, 1500 * 1.25, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0)
+Q_cold_op = sim_rad_in_loop(radiators.monsta_280, 1500 * 1.25, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0)
 fan_op_power = Q_cold_op /  (0.0004719474 * 300) * 3.6 * 12 # assuming linear. need to make a fan libray at some point
 pump_op_power = pump_power(system_op_lpm) 
 system_op_power = pump_op_power + fan_op_power
