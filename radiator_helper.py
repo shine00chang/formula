@@ -11,12 +11,11 @@ C_WATER = 4184.0     # J/(kg*K)
 # Fundamentally is a function for finding operating Q_cold given system and requirement 
 # If plotting, produces effectiveness & T_hot over Q_cold plot.
 # Q in m3/s, T in C, q in Watts
-def sim_rad_in_loop(rad, q_in, Q_hot, T_hot_req, T_cold, *, plot=True):
-    Awater, Aair, Across, tubeA, tubeB, tubeN, D = rad()
+def sim_rad_in_loop(rad, q_in, Q_hot, T_hot_req, T_cold, plot=True):
 
     # Sweep air velocity from 0.1 to 6 m/s
     v_air = np.linspace(0.5, 6.0, 100)
-    Q_cold = v_air * Across                     # Volumetric airflow (m^3/s)
+    Q_cold = v_air * rad.Across                     # Volumetric airflow (m^3/s)
     cfm = Q_cold * 2118.88                      # Convert m^3/s to CFM
 
     # Calculate heat capacity rates
@@ -42,10 +41,10 @@ def sim_rad_in_loop(rad, q_in, Q_hot, T_hot_req, T_cold, *, plot=True):
     Q_cold_op = Q_cold[op_idx]
     cfm_op = cfm[op_idx]
     
-    print(f"For {T_hot_req}°C coolant target (at {q_in}W load), requires {Q_cold_op/Across:.2f} m/s air velocity ({cfm_op:.1f} CFM).")
-
     if not plot:
         return Q_cold_op
+
+    print(f"For {T_hot_req}°C coolant target (at {q_in}W load), requires {Q_cold_op/rad.Across:.2f} m/s air velocity ({cfm_op:.1f} CFM).")
 
     # ---------------------------------------------------------
     # Figure 3: Effectiveness and Steady-State Temp over CFM
