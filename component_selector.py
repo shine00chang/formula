@@ -36,14 +36,14 @@ def generate_performance_table(loop_module, table_title):
         
         for pump in pmps:
             # Invoke the using() function with radiator, pump, fan, and boolean flag
-            metrics = loop_module.using(rad, pump, fans.Mk11, False)
+            metrics = loop_module.using(rad, pump, fans.orion1238, False)
             
             # Format the 3-element tuple into a single string cell
             # Assuming the metrics are floats; formatted to 2 decimal places
             if table_title == "DOUBLE":
-                cell_val = f"({metrics[0][0]:.2f}/{metrics[0][1]:.2f}, {metrics[1]:.2f}, {metrics[2]:.2f})"
+                cell_val = f"({metrics[0][0]:.1f}/{metrics[0][1]:.1f}, {metrics[1]:.1f}, {metrics[2]:.1f})"
             else:
-                cell_val = f"({metrics[0]:.2f}, {metrics[1]:.2f}, {metrics[2]:.2f})"
+                cell_val = f"({metrics[0]:.1f}, {metrics[1]:.1f}, {metrics[2]:.1f})"
             cell_strings.append(f"{cell_val:<{data_col_w}}")
             
         row_string += " | ".join(cell_strings)

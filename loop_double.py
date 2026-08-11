@@ -86,3 +86,11 @@ def using(radiator, pump, fan, plot=True):
      
     plt.tight_layout()
     plt.show();
+
+if __name__ == "__main__":
+    import radiators
+    import pumps
+    import fans
+
+    using(radiators.blackice_280, pumps.boschePCE1, fans.orion1238, True)
+

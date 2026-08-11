@@ -55,4 +55,4 @@ class KX450F_left(Radiator):
     D = helper.in_to_m(1)
 
 
-radiator_list = [blackice_280, monsta_280]
+radiator_list = [blackice_280, monsta_280, KX450F_left]

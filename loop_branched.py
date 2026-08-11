@@ -62,7 +62,7 @@ def using(radiator, pump, fan, plot=True):
 
     # === Power === 
     Q_cold_op = sim_rad_in_loop(radiator, 1500 * 1.25, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0, False)
-    fan_op_power = fan.power(Q_cold_op /  (0.0004719474 * 300))
+    fan_op_power = fan.power(Q_cold_op / 0.0004719474)
     pump_op_power = pump_p(system_op_lpm) 
     system_op_power = pump_op_power + fan_op_power
     total_power = system_op_power
