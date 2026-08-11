@@ -2,6 +2,7 @@ import os
 import re
 import csv
 import numpy as np
+from numpy.polynomial import Polynomial
 import matplotlib.pyplot as plt
 import radiators
 
@@ -56,8 +57,8 @@ def generate_fake_test_data():
 
 
 def calibrate(*, plot=False):
-    filename = 'heater_calibration_fake_2000ml.csv'
-    data = np.loadtxt(f'datasets/{filename}', delimiter=',')
+    filename = 'heater_calibration_8000ml.csv'
+    data = np.loadtxt(f'datasets/{filename}', usecols=(3,5))
     print(f"calibrating using file:\t'{filename}'...")
 
     t = data[:, 0]
@@ -70,18 +71,24 @@ def calibrate(*, plot=False):
 
     m = int(res.group(1)) / 1000.0  # in kg
 
+    # Construct time series
     # q' = m * c * T'
     T_dot = np.gradient(T, t)
     q_dot = m * cwater() * T_dot
 
-    T_x = np.linspace(round(np.min(T)), round(np.max(T)), 100)
-    
+    # Construct temp series
     def find_nearest(array, value):
         array = np.asarray(array)
         idx = (np.abs(array - value)).argmin()
         return idx
-        
-    f_q_dot = lambda T_in: q_dot[find_nearest(T, T_in)]
+    T_x = np.linspace(round(np.min(T)), round(np.max(T)), 100)
+    q_dot_over_T = [q_dot[find_nearest(T_i, T)] for T_i in T_x]
+    
+    # Construct linear fit
+    fit = Polynomial.fit(T_x, q_dot_over_T, deg=1)
+    b, m = fit.convert().coef
+    
+    f_q_dot = lambda T: m * T + b
 
     if not plot:
         return f_q_dot
@@ -102,7 +109,8 @@ def calibrate(*, plot=False):
     ax1.legend(loc="upper left")
     ax2.legend(loc="upper right")
 
-    ax3.plot(T_x, [f_q_dot(val) for val in T_x], label='$q_{heater}$', color='red')
+    ax3.plot(T_x, q_dot_over_T, label='$q_{heater}$', color='red')
+    ax3.plot(T_x, [f_q_dot(T) for T in T_x], label='$q_{heater} fit$', color='red', linestyle="--")
     ax3.set_ylabel('$q_{heater}$ (W)', color="red")
     ax3.set_xlabel('$T_{water}$ (°C)')
     ax3.set_title("Real Heat Input vs. Temperature")
@@ -238,9 +246,8 @@ def func():
     fig.tight_layout()
 
 
-generate_fake_calibration_data()
 q_in = calibrate(plot=True)
-generate_fake_test_data()
-func()
-
 plt.show()
+
+#func()
+
