@@ -30,17 +30,19 @@ def using(radiator, pump, fan, plot=True):
     system2_op_lpm = solve_system(x, pump2, system2);
 
     Q1_cold_op = sim_rad_in_loop(radiator, 500 * 1.25, system1_op_lpm * (1.0 / 60000.0), 50.0, 20.0, plot)
-    fan1_op_power = fan.power(Q1_cold_op /  0.0004719474)
+    fan1_cfm = Q1_cold_op / 0.0004719474
+    fan1_op_power = fan.power(fan1_cfm)
     pump1_op_power = pump_power1(system1_op_lpm) 
     system1_op_power = pump1_op_power + fan1_op_power
 
     Q2_cold_op = sim_rad_in_loop(radiator, 1000 * 1.25, system2_op_lpm * (1.0 / 60000.0), 50.0, 20.0, plot)
-    fan2_op_power = fan.power(Q2_cold_op / 0.0004719474)
+    fan2_cfm = Q2_cold_op / 0.0004719474
+    fan2_op_power = fan.power(fan2_cfm)
     pump2_op_power = pump_power2(system2_op_lpm) 
     system2_op_power = pump2_op_power + fan2_op_power
 
     if not plot:
-        return (system1_op_lpm, system2_op_lpm), pump1_op_power + pump2_op_power, fan1_op_power + fan2_op_power
+        return (system1_op_lpm, system2_op_lpm), pump1_op_power + pump2_op_power, (fan1_cfm, fan2_cfm)
 
     print("=== System 1 ===")
     print(f"At hydraulic operating point ({system1_op_lpm:.2f} LPM)")

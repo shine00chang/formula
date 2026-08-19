@@ -36,14 +36,14 @@ def generate_performance_table(loop_module, table_title):
         
         for pump in pmps:
             # Invoke the using() function with radiator, pump, fan, and boolean flag
-            metrics = loop_module.using(rad, pump, fans.orion1238, False)
+            metrics = loop_module.using(rad, pump, fans.qfr1212, False)
             
             # Format the 3-element tuple into a single string cell
             # Assuming the metrics are floats; formatted to 2 decimal places
             if table_title == "DOUBLE":
-                cell_val = f"({metrics[0][0]:.1f}/{metrics[0][1]:.1f}, {metrics[1]:.1f}, {metrics[2]:.1f})"
+                cell_val = f"({metrics[0][0]:.1f}/{metrics[0][1]:.1f}, {metrics[1]:.1f}, ({metrics[2][0]:.0f}/{metrics[2][1]:.0f})"
             else:
-                cell_val = f"({metrics[0]:.1f}, {metrics[1]:.1f}, {metrics[2]:.1f})"
+                cell_val = f"({metrics[0]:.1f}, {metrics[1]:.1f}, {metrics[2]:.0f})"
             cell_strings.append(f"{cell_val:<{data_col_w}}")
             
         row_string += " | ".join(cell_strings)
@@ -53,6 +53,7 @@ def generate_performance_table(loop_module, table_title):
 
 
 if __name__ == "__main__":
+    print("using qfr1212 fan")
     # Create the three tables, one for each type of loop
     generate_performance_table(loop_branched, "BRANCHED")
     generate_performance_table(loop_double, "DOUBLE")

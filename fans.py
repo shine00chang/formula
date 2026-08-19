@@ -6,3 +6,7 @@ class Mk11(Fan):
 
 class orion1238(Fan):
     power = lambda flow: 21.4 * 2
+
+#https://www.digikey.com/en/products/detail/delta-electronics/QFR1212GHEEVT/11201149
+class qfr1212(Fan):
+    power = lambda flow: 21.6 * 2

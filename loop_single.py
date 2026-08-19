@@ -22,11 +22,13 @@ def using(radiator, pump, fan, plot=True):
     pump_op_power = pump_p(system_op_lpm)
 
     Q_cold_op = sim_rad_in_loop(radiator, 1500 * 1.25, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0, plot)
-    fan_op_power = fan.power(Q_cold_op / 0.0004719474)
+    fan_cfm = Q_cold_op / 0.0004719474
+    fan_op_power = fan.power(fan_cfm)
     system_op_power = pump_op_power + fan_op_power
 
     if not plot:
-        return system_op_lpm, pump_op_power, fan_op_power
+        # return system_op_lpm, pump_op_power, fan_op_power
+        return system_op_lpm, pump_op_power, fan_cfm
 
     print("===")
     print(f"At hydraulic operating point ({system_op_lpm:.2f} LPM)")
