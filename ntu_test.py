@@ -1,10 +1,13 @@
 import os
 import re
 import csv
+import math
 import numpy as np
 from numpy.polynomial import Polynomial
+from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 import radiators
+from ntu import ntu_method
 
 
 # Physical constants
@@ -39,7 +42,7 @@ def generate_fake_calibration_data():
 
 def generate_fake_test_data():
     os.makedirs('datasets', exist_ok=True)
-    filename = 'datasets/heater_test_2000ml_3ms_air_25Cair_8LPM.csv'
+    filename = 'datasets/heater_test_fake_2000ml_3ms_air_25Cair_8LPM.csv'
     start_temp = 23.0
     initial_rate = 0.20   # deg/s at t = 0
     final_rate = 0.0      # deg/s at t = 60
@@ -56,8 +59,7 @@ def generate_fake_test_data():
     print(f"fake test data made at:\t{filename}")
 
 
-def calibrate(*, plot=False):
-    filename = 'heater_calibration_8000ml.csv'
+def calibrate(filename, *, plot=False):
     data = np.loadtxt(f'datasets/{filename}', usecols=(3,5))
     print(f"calibrating using file:\t'{filename}'...")
 
@@ -154,13 +156,53 @@ def get_heats(T_hot, dT_hot, T_air, m_water, Q_water_m3s, Q_air_m3s):
     e = q_out / q_ideal if q_ideal > 0 else 0.0
     return q_out, e, C_min
 
-def func():
-    filename = 'heater_test_2000ml_3ms_air_25Cair_8LPM.csv'
-    data = np.loadtxt(f'datasets/{filename}', delimiter=',')
+# Calibration from 8-18-2026
+# 11812 ohm @ 20.61C
+# 5594 ohm @ 43.9C
+def to_celcius (resistance):
+    NOMINAL_RESISTANCE = 11812
+    NOMINAL_TEMPERATURE = 20.61
+    BETA_COEFFICIENT = 2988
+
+    steinhart = resistance / NOMINAL_RESISTANCE
+    steinhart = math.log(steinhart)
+    steinhart /= BETA_COEFFICIENT
+    steinhart += 1.0 / (NOMINAL_TEMPERATURE + 273.15)
+    steinhart = 1.0 / steinhart
+
+    return steinhart - 273.15
+
+def func(filename):
+    data = np.loadtxt(f'datasets/{filename}', usecols=(1, 3, 5))
     print(f"pulling test data from file:\t'{filename}'...")
 
-    t = data[:, 0]
-    T_hot = data[:, 1]
+    resistance = data[:, 0]
+    t_raw = data[:, 1]
+    # T_hot_raw = data[:, 2]
+    T_hot_raw = [to_celcius(r) for r in resistance]
+
+    # Construct Fit
+    def model(t, T_max, T_0, tau):
+        return T_max - (T_max - T_0) * np.exp(-t / tau)
+
+    initial_guess = [60.0, 24.0, 1000.0]
+
+    # Perform the curve fit using Scipy
+    # popt contains the optimized parameters, pcov contains the covariance matrix
+    popt, pcov = curve_fit(model, t_raw, T_hot_raw, p0=initial_guess)
+
+    T_max_opt, T_0_opt, tau_opt = popt
+    print(f"Fitted Parameters:")
+    print(f"T_max = {T_max_opt:.2f} °C")
+    print(f"T_0   = {T_0_opt:.2f} °C")
+    print(f"tau   = {tau_opt:.2f} s")
+
+    # Evaluate fit
+    # Use 5 tau long time series
+    t = np.linspace(t_raw[0], t_raw[0] + tau_opt * 5, 1000)
+    T_hot = model(t, *popt)
+
+    # Get Gradient
     dT_hot = np.gradient(T_hot, t)
 
     res = re.search(r'([0-9]*)ml', filename)
@@ -175,7 +217,7 @@ def func():
         return
     v_air = float(res.group(1))  # in m/s 
 
-    res = re.search(r'([0-9]*)LPM', filename)
+    res = re.search(r'([0-9\.]*)LPM', filename)
     if res is None:
         print(f"ERROR: could not parse LPM in file name {filename}.")
         return
@@ -198,6 +240,7 @@ def func():
     # Convert flow rates to SI units (m^3/s)
     Q_water_m3s = LPM / (1000.0 * 60.0)
     Q_air_m3s = v_air * Across
+    print(Q_air_m3s)
 
     q_out = np.zeros(len(T_hot))
     e = np.zeros(len(T_hot))
@@ -206,19 +249,30 @@ def func():
     for i in range(len(T_hot)):
         q_out[i], e[i], C_min_val = get_heats(T_hot[i], dT_hot[i], T_air, m_water, Q_water_m3s, Q_air_m3s)
 
-    e_ntu = ntu_method(radiators.blackice280, Q_water_m3s, Q_air_m3s)[0]
+    e_ntu = ntu_method(radiators.blackice_280, Q_water_m3s, Q_air_m3s)[0]
     
     # Correct NTU heat rejection formula: q = epsilon * C_min * (T_hot_in - T_cold_in)
     q_out_ntu = [e_ntu * C_min_val * (T - T_air) for T in T_hot]
 
+    # Display steady state
+    # remember, last time will be at five tau
+    correction_factor = e[-1] / e_ntu
+    print("== correction ==")
+    print(f"expected effectiveness: {e_ntu}")
+    print(f"real effectiveness: {e[-1]}")
+    print(f"correction factor: {correction_factor}")
+
     fig, (ax1, ax3) = plt.subplots(1, 2, figsize=(12, 5))
     ax2 = ax1.twinx()
 
+    ax1.plot(t_raw, T_hot_raw, label='$T_{water, raw}$', color="red", lw=0.5)
     ax1.plot(t, T_hot, label='$T_{water}$', color="red")
+    ax1.axvline(t[-1], color='black', linestyle='--', lw=0.5)
     ax1.set_ylabel('$T_{water}$ (°C)', color="red")
     ax1.tick_params(axis='y', labelcolor="red")
 
     ax2.plot(t, dT_hot, label='dT/dt', color="blue", linestyle='--')
+    ax2.set_ylim([0, 0.04])
     ax2.set_ylabel('$\\frac{dT}{dt}$ (°C/s)', color="blue")
     ax2.tick_params(axis='y', labelcolor="blue")
     ax2.set_xlabel('time (s)')
@@ -237,17 +291,26 @@ def func():
     ax4.axhline(e_ntu, label='$eff_{NTU}$', color='green', linestyle='--')
     ax4.set_ylabel('Effectiveness ($\\epsilon$)', color="green")
     ax4.tick_params(axis='y', labelcolor="green")
-    ax4.set_ylim([0, 1])
+    ax4.set_ylim([0, 2])
 
     ax3.set_title("Measured HX Effectiveness vs. NTU Method")
     ax3.legend(loc="upper left")
     ax4.legend(loc="upper right")
-
+    
+    fig.suptitle(filename)
     fig.tight_layout()
 
 
-q_in = calibrate(plot=True)
-plt.show()
+q_in = calibrate('heater_calibration_6000ml_8_18_26.csv', plot=True)
+q_in = lambda x: 2000
+datas = [
+        # "heater_test_7000ml_3.5ms_air_22Cair_4.7LPM_8_11_26.csv",
+        # "heater_test_7000ml_3.5ms_air_22Cair_5.1LPM_8_11_26.csv",
+        "heater_test_7000ml_3.8ms_air_22Cair_5.6LPM_8_13_26.csv",
+        "heater_test_5780ml_3.8ms_air_22Cair_7.3LPM_8_18_26.csv",
+        ]
+for data in datas:
+    func(data)
 
-#func()
+plt.show()
 
