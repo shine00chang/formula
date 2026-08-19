@@ -25,6 +25,13 @@ def sim_rad_in_loop(rad, q_in, Q_hot, T_hot_req, T_cold, plot=True):
 
     # Evaluate effectiveness (assuming ntu_method returns effectiveness epsilon)
     e = np.array([ntu_method(rad, Q_hot, Q_cold_i)[0] for Q_cold_i in Q_cold])
+
+    # NOTE: correction factor from NTU testing
+    # dangerous. since test was conducted on blackice gtx 280, will only apply for that radiator
+    # this is the factor attained from the 8-18-26 and 8-13-26 tests
+    if rad.__name__ == "blackice_280":
+        print("== WARNING: found blackice 280, correction factor k=1.3 applied ==")
+        e = e * 1.3
     
     # Calculate steady-state coolant inlet temperature: T_in = T_ambient + q_in / (epsilon * C_min)
     T_steady = T_cold + (q_in / (e * C_min))

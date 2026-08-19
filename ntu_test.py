@@ -240,7 +240,7 @@ def func(filename):
     # Convert flow rates to SI units (m^3/s)
     Q_water_m3s = LPM / (1000.0 * 60.0)
     Q_air_m3s = v_air * Across
-    print(Q_air_m3s)
+    print(f"air flow: \t{Q_air_m3s / 0.00047195} CFM")
 
     q_out = np.zeros(len(T_hot))
     e = np.zeros(len(T_hot))
