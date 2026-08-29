@@ -1,2 +1,5 @@
 __pycache__/
 .venv
+
+# real DAQ data tend to be huge
+datasets/real_*
