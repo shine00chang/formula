@@ -3,12 +3,16 @@ import matplotlib.pyplot as plt
 
 # Assuming these are imported from your local environment
 from loop_components import emrax228, cm200dx
-from loop_helper import solve_system, draw_system
+from loop_helper import solve_system, draw_system, p_minor, p_major, in_to_m
 from radiator_helper import sim_rad_in_loop
 
 def using(radiator, pump, fan, plot=True):
     def system(lpm):
-        return cm200dx(lpm) + emrax228(lpm) + radiator.flow(lpm)
+        return (
+            cm200dx(lpm) + emrax228(lpm) + radiator.flow(lpm)
+            + p_minor(lpm, 0.3, in_to_m(0.5)) * 3 # Elbows
+            + p_major(lpm, in_to_m(13*12), in_to_m(0.5)) # Tubing
+            )
 
     def pump_f(lpm):
         return pump.flow(lpm) * 2
@@ -30,8 +34,10 @@ def using(radiator, pump, fan, plot=True):
         # return system_op_lpm, pump_op_power, fan_op_power
         return system_op_lpm, pump_op_power, fan_cfm
 
+    minor_loss = (p_minor(system_op_lpm, in_to_m(0.3), in_to_m(0.5)) * 3 + p_major(system_op_lpm, in_to_m(13*12), in_to_m(0.5))) * 1e5
     print("===")
     print(f"At hydraulic operating point ({system_op_lpm:.2f} LPM)")
+    print(f"Minor head loss: {minor_loss:.2f} Pa")
     print(f"pump system consumes {pump_op_power:.2f} W, fan consumes {fan_op_power:.2f} W. Total {system_op_power:.2f} W")
     print("===")
 

@@ -28,7 +28,7 @@ def p_major(lpm: float, l: float, d: float, print_out: float = 0.0) -> float:
     if print_out > 0:
         print(f"Expected pressure loss:\n{p:.0f} Pa\n{p/1e5:.3f} bar\n")
         
-    return p
+    return p / 1e5
 
 def p_minor(lpm: float, k: float, d: float, print_out: float = 0.0) -> float:
     if print_out > 0:
@@ -44,7 +44,7 @@ def p_minor(lpm: float, k: float, d: float, print_out: float = 0.0) -> float:
     if print_out > 0:
         print(f"Expected pressure loss:\n{p:.0f} Pa\n{p/1e5:.3f} bar\n")
         
-    return p
+    return p / 1e5
 
 def solve_system(x, pump, system):
 
