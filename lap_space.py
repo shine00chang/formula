@@ -2,6 +2,7 @@ import copy
 import time
 
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 
 import lap_sim 
@@ -74,7 +75,36 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
 
     return points
 
-def lap_space_visualize (points):
+
+
+def score_function (energy, lap_time):
+    # using 2026 results
+    t_min = 1312;
+    t_max = t_min * 1.45; 
+    e_max = 0.797;
+    e_min = 0.289;
+    E_min = 2.84; #kWh
+
+    t_us = lap_time * 22
+    score_time = np.where(
+        t_us < t_min * 1.45, 
+        250 * (np.fmax(t_max, t_us) / t_us - 1) / 0.45,
+        0)
+    score_laps = 25; # assume we finish XD
+    E_us = energy * 22 / 1000; #kWh
+    e_us = (np.fmin(t_us, t_min) / t_us) * (np.fmin(E_us, E_min) / E_us);
+    score_eff = np.where(
+        t_us < t_min * 1.45,
+        100 * (e_us  - np.fmin(e_min, e_us) ) / (np.fmax(e_us, e_max) - np.fmin(e_min, e_us)),
+        0)
+
+    return score_eff + score_time + score_laps
+
+
+
+
+
+def lap_space_visualize (points, score_function):
     # Plots:
     # - Plot lap_time over energy_used as a scatter plot
     #   Color shows the power limit and marker size shows the accel limit, so each dot can be traced
@@ -119,8 +149,10 @@ def lap_space_visualize (points):
     else:
         sizes = np.full_like(accel, 80.0)
 
+    # == Plotting ==
     fig, ax = plt.subplots(figsize=(9, 6))
-
+    
+    # Non-lap-sim points
     sc = ax.scatter(
         [p["energy_used"] for p in AS_points], 
         [p["lap_time"] for p in AS_points],
@@ -130,9 +162,44 @@ def lap_space_visualize (points):
         [Mk11_comp["lap_time"]], 
         c="c", marker='x', label="Mk11 comp")
 
-    sc = ax.scatter(energy, lap_time, c=power_kw, s=sizes, cmap="viridis",
-                    alpha=0.75, edgecolors="k", linewidths=0.4)
+    # Lap-sim points
+    sc = ax.scatter(energy, lap_time, c=power_kw, s=sizes, cmap="plasma",
+                    edgecolors="k", linewidths=0.4)
+
     fig.colorbar(sc, ax=ax, label="Pack power limit (kW)")
+
+
+    # == Score surface  ==
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
+    x = np.linspace(xlim[0], xlim[1], 100)
+    y = np.linspace(ylim[0], ylim[1], 100)
+    X, Y = np.meshgrid(x, y)
+    Z = score_function(X,Y)
+
+    # x and y are bounds, so z should be the value *inside* those bounds.
+    # Therefore, remove the last value from the z array.
+    Z = Z[:-1, :-1]
+    levels = ticker.MaxNLocator(nbins=15).tick_values(Z.min(), Z.max())
+
+
+    # pick the desired colormap, sensible levels, and define a normalization
+    # instance which takes data values and translates those into levels.
+    cmap = plt.colormaps['inferno']
+    # score_surface = ax.pcolormesh(X, Y, Z, cmap=cmap, norm=norm, zorder=0)
+
+    # contours are *point* based plots, so convert our bound into point
+    # centers
+    dx = x[1]-x[0]
+    dy = y[1]-y[0]
+    score_surface = ax.contourf(X[:-1, :-1] + dx/2.,
+                      Y[:-1, :-1] + dy/2., 
+                      Z,
+                      levels=levels,
+                      cmap=cmap,
+                      zorder=0)
+
+    fig.colorbar(score_surface, ax=ax, label="score")
 
     # size legend (lowest / middle / highest accel limit)
     if a_max > a_min:
@@ -162,7 +229,7 @@ if __name__ == "__main__":
     # Define seach space
     limit_min = lap_sim.LapLimits()
     limit_min.lat = 1.8 * 9.8
-    limit_min.brake = -1.9 * 9.8
+    limit_min.brake = -1.7 * 9.8
     limit_min.accel = 100 * car.FDR / (car.mass * car.wheelR)
     limit_min.power = 60e3   # W
     limit_min.motor = 5000   # rpm
@@ -174,4 +241,4 @@ if __name__ == "__main__":
 
     # Run
     points = lap_space_scan(limit_min, limit_max, 10, car)
-    lap_space_visualize(points)
+    lap_space_visualize(points, score_function)
