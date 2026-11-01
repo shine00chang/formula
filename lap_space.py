@@ -118,10 +118,6 @@ def lap_space_visualize (points, score_function):
             "lap_time": 61.8,
         },
         {
-            "energy_used":  82,
-            "lap_time": 81,
-        },
-        {
             "energy_used": 162,
             "lap_time": 67.6,
         },
@@ -131,11 +127,11 @@ def lap_space_visualize (points, score_function):
         },
     ]
     other_points = [
-        {
-            "energy_used": 138.7,
-            "lap_time": 90.4,
-            "label": "Mk11"
-        },
+        # {
+        #     "energy_used": 138.7,
+        #     "lap_time": 90.4,
+        #     "label": "Mk11"
+        # },
         {
             "energy_used":  241,
             "lap_time": 59.65,
@@ -247,7 +243,8 @@ if __name__ == "__main__":
     # Define seach space
     limit_min = lap_sim.LapLimits()
     limit_min.lat = 1.8 * 9.8
-    limit_min.brake = -1.7 * 9.8
+    limit_min.lon = 1.8 * 9.8
+    limit_min.brake = 1.7 * 9.8
     limit_min.accel = 100 * car.FDR / (car.mass * car.wheelR)
     limit_min.power = 60e3   # W
     limit_min.motor = 5000   # rpm

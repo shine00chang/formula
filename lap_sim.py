@@ -454,7 +454,6 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
         a_accel = min(a_lon, limits.accel, limits.pack_limited_accel(v_to_rpm(v_old), car))
         v_accel = min(v_motor_max, v_old + a_accel * DT) 
         if sufficient_braking_distance(state.section_idx, section["length"] - state.section_traveled - v_accel * DT, v_accel):
-            v_accel = min(v_motor_max, v_old + a_accel * DT) 
             v_new = v_accel
         elif sufficient_braking_distance(state.section_idx, section["length"] - state.section_traveled - v_old * DT, v_old):
             v_new = v_old
