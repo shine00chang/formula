@@ -46,12 +46,12 @@ class Car:
 
 class LapLimits:
     lat: float    # m/s2
-    brake: float  # m/s2, negative
+    lon: float    # m/s2
 
+    brake: float  # m/s2, negative
     accel: float  # m/s2
     power: float  # W, pack power limit
     motor: float  # rpm
-
     regen_torque: float # Nm
 
     def pack_limited_accel(self, rpm, car):
@@ -375,22 +375,37 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
                     d["length"] -= s
 
 
-    # Returns highest speed allowed at this position such that every upcoming turn can still be
-    # entered at or below its own max speed, braking at limits.brake (constant decel).
-    #  - the current section's own limit applies directly (inf on a straight)
-    #  - an upcoming section j starting d meters ahead caps speed at sqrt(v_j^2 + 2*|brake|*d)
-    # Sections are scanned only until they are too far away to matter.
-    def speed_cap(section_idx, traveled):
-        
-        brake = abs(limits.brake)
-        cap = sections[section_idx]["v_max"]
-        d = max(0.0, sections[section_idx]["length"] - traveled)  # distance to the end of this section
-        for j in range(section_idx + 1, n_sections):
-            if 2 * brake * d >= v_motor_max ** 2:
-                break  # even from standstill-level limits, nothing further ahead can bind
-            cap = min(cap, np.sqrt(sections[j]["v_max"] ** 2 + 2 * brake * d))
-            d += sections[j]["length"]
-        return cap
+    # explanation TODO:
+
+    def sufficient_braking_distance(j0, d0, v0):
+        v = v0
+        E = 0
+
+        for j in range(j0, n_sections):
+            S = sections[j]
+            d = S["length"] if j != j0 else d0
+            
+            if S["type"] != "straight" and S["radius"] != 0:
+                a_lat = v ** 2 / S["radius"]
+                a_lon = limits.lon * np.sqrt(max(0.0, 1 - (a_lat / limits.lat) ** 2))
+            else:
+                a_lon = limits.lon
+            a = min(a_lon, limits.brake)
+            E += a * d
+
+            vj = S["v_max"]
+            if 0.5 * (v0 * v0 - vj * vj) > E:
+                #print(f"i said no! cuz of section {j0}, {j}")
+                return False
+               
+            if 0.5*v0*v0 < E:
+                #print(f"damn alright, after section {j0}, {j}")
+                return True
+
+            v = np.sqrt(v*v - 2*a*d)
+
+        return True
+
 
     log("=" * 60)
     log("[track] START: time-stepping lap solve")
@@ -409,8 +424,10 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
     # == Time stepping ==
     log_every = int(round(LOG_INTERVAL_S / DT))
     wall_start = time.perf_counter()
+    state.v = 13
 
     while state.section_idx < n_sections:
+
         if len(states) * DT > MAX_SIM_TIME:  # simulated time = steps taken * DT
             raise RuntimeError(
                 f"Sim exceeded {MAX_SIM_TIME:.0f} s, stopping. "
@@ -428,20 +445,24 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
         #      falls to zero as the car reaches the turn's max speed. Still power limited.
         # 2. Speed cap from the track ahead (see speed_cap). The car follows the cap down when
         #    it has to brake, and cannot slow faster than limits.brake.
-        a_tire = limits.accel
+        a_lon = limits.lon
         if section["type"] != "straight" and section["radius"] != 0:
             a_lat = v_old ** 2 / section["radius"]
-            a_tire = limits.accel * np.sqrt(max(0.0, 1 - (a_lat / limits.lat) ** 2))
-        a_max = min(a_tire, limits.pack_limited_accel(v_to_rpm(v_old), car))
+            a_lon = limits.lon * np.sqrt(max(0.0, 1 - (a_lat / limits.lat) ** 2))
+    
+        # try accel
+        a_accel = min(a_lon, limits.accel, limits.pack_limited_accel(v_to_rpm(v_old), car))
+        v_accel = min(v_motor_max, v_old + a_accel * DT) 
+        if sufficient_braking_distance(state.section_idx, section["length"] - state.section_traveled - v_accel * DT, v_accel):
+            v_accel = min(v_motor_max, v_old + a_accel * DT) 
+            v_new = v_accel
+        elif sufficient_braking_distance(state.section_idx, section["length"] - state.section_traveled - v_old * DT, v_old):
+            v_new = v_old
+        else:
+            v_new = v_old - min(a_lon, limits.brake) * DT
 
-        # cap evaluated where the car will be at the end of this step
-        v_cap = speed_cap(state.section_idx, state.section_traveled + v_old * DT)
-
-        v_new = v_old + a_max * DT
-        v_new = min(v_new, v_motor_max)      # rpm limit
-        v_new = min(v_new, v_cap)            # upcoming turn limits
-        v_new = max(v_new, v_old + limits.brake * DT)  # braking limit
-        v_new = max(v_new, 0.0)
+        if v_new < 0:
+            raise RuntimeError(f"time stepped velocity turned negative on section {state.section_idx}")
 
         # update state: effective acceleration after clamping (keeps torque consistent with speed)
         step_dist = 0.5 * (v_old + v_new) * DT  # trapezoidal position increment
@@ -468,7 +489,8 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
                 v_limit = sections[state.section_idx]["v_max"]
                 if state.v > v_limit * CORNER_ENTRY_TOL:
                     log(f"[track] WARNING: entered section {state.section_idx + 1} at "
-                          f"{state.v:.1f} m/s, above its limit of {v_limit:.1f} m/s")
+                          f"{state.v:.1f} m/s, above its limit of {v_limit:.1f} m/s. correcting")
+                    state.v = v_limit
 
     wall = time.perf_counter() - wall_start
     log(f"[track] END: lap time {len(states) * DT:.2f} s, {len(states)} steps, "
@@ -759,7 +781,8 @@ if __name__ == "__main__":
 
     limit = LapLimits()
     limit.lat = 1.8 * 9.8
-    limit.brake = -1.7 * 9.8
+    limit.lon = 1.8 * 9.8
+    limit.brake = 1.7 * 9.8
     limit.accel = 200 * car.FDR / (car.mass * car.wheelR)
     limit.power = 80e3   # W
     limit.motor = 5000   # rpm
