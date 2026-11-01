@@ -43,6 +43,9 @@ class Car:
 
     FDR: float
     wheelR: float  # m
+    coeff_rolling_resistance: float
+    coeff_drag_area: float # Cd * m2
+
 
 class LapLimits:
     lat: float    # m/s2
@@ -81,6 +84,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
         v: float = 0.0                 # m/s
         a: float = 0.0                 # m/s2 logitudinal acceleration. lateral acceleration is irrelevant for PT maths
         section_traveled: float = 0.0  # m, distance into the current section
+        torque: float = 0.0          
 
         # progress through the lap
         section_idx: int = 0           # index of the current track section
@@ -427,7 +431,8 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
     state.v = 13
 
     while state.section_idx < n_sections:
-
+        # if state.section_idx == 5:
+        #     assert False
         if len(states) * DT > MAX_SIM_TIME:  # simulated time = steps taken * DT
             raise RuntimeError(
                 f"Sim exceeded {MAX_SIM_TIME:.0f} s, stopping. "
@@ -451,7 +456,11 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
             a_lon = limits.lon * np.sqrt(max(0.0, 1 - (a_lat / limits.lat) ** 2))
     
         # try accel
-        a_accel = min(a_lon, limits.accel, limits.pack_limited_accel(v_to_rpm(v_old), car))
+        F_drag = 0.5 * 1.2 * v_old * v_old * car.coeff_drag_area
+        F_rr   = car.coeff_rolling_resistance * 9.8 * car.mass
+        a_accel = min(limits.accel, limits.pack_limited_accel(v_to_rpm(v_old), car))
+        a_accel = a_accel - (F_drag + F_rr) / car.mass
+        a_accel = min(a_accel, a_lon)
         v_accel = min(v_motor_max, v_old + a_accel * DT) 
         if sufficient_braking_distance(state.section_idx, section["length"] - state.section_traveled - v_accel * DT, v_accel):
             v_new = v_accel
@@ -466,6 +475,8 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
         # update state: effective acceleration after clamping (keeps torque consistent with speed)
         step_dist = 0.5 * (v_old + v_new) * DT  # trapezoidal position increment
         state.a = (v_new - v_old) / DT
+        motor_force = state.a * car.mass + F_drag + F_rr
+        state.torque = max(limits.regen_torque, motor_force * car.wheelR / car.FDR)
         state.v = v_new
         state.section_traveled += step_dist
         state.distance += step_dist
@@ -487,7 +498,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
             if state.section_idx < n_sections and sections[state.section_idx]["type"] != "straight":
                 v_limit = sections[state.section_idx]["v_max"]
                 if state.v > v_limit * CORNER_ENTRY_TOL:
-                    log(f"[track] WARNING: entered section {state.section_idx + 1} at "
+                    print(f"[track] WARNING: entered section {state.section_idx + 1} at "
                           f"{state.v:.1f} m/s, above its limit of {v_limit:.1f} m/s. correcting")
                     state.v = v_limit
 
@@ -507,7 +518,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
         "a": a,
         "distance": np.array([s.distance for s in states]),  # m, for placing samples on the track
         "sections": sections,                                # track geometry, for the track plots
-        "torque": np.maximum(limits.regen_torque, a * car.mass * car.wheelR / car.FDR),
+        "torque": np.array([s.torque for s in states]),
         "rpm": 60 * v * car.FDR / (car.wheelR * 2 * np.pi),
         "lap_time": (len(states) + 1) * DT
     }
@@ -775,13 +786,15 @@ if __name__ == "__main__":
 
     car = Car()
     car.mass = 285 # kg
-    car.FDR = 3.91
+    car.FDR = 3.71
     car.wheelR = 0.2  # m
+    car.coeff_rolling_resistance = 0.016 
+    car.coeff_drag_area = 1.38 # m2
 
     limit = LapLimits()
     limit.lat = 1.8 * 9.8
     limit.lon = 1.8 * 9.8
-    limit.brake = 1.7 * 9.8
+    limit.brake = 1 * 9.8
     limit.accel = 200 * car.FDR / (car.mass * car.wheelR)
     limit.power = 80e3   # W
     limit.motor = 5000   # rpm

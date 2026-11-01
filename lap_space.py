@@ -26,15 +26,28 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
         lim_space.append(lim)
 
     # Power Axis
-    d = (limits_max.power - limits_min.power) / (n_per_axis-1)
-    out = []
-    for i in range(n_per_axis):
-        for lim in lim_space:
-            lim = copy.copy(lim) # clone, so every point is its own object
-            lim.power = limits_min.power + d * i
-            out.append(lim)
-    lim_space = out
+    if limits_max.power != limits_min.power:
+        d = (limits_max.power - limits_min.power) / (n_per_axis-1)
+        out = []
+        for i in range(n_per_axis):
+            for lim in lim_space:
+                lim = copy.copy(lim) # clone, so every point is its own object
+                lim.power = limits_min.power + d * i
+                out.append(lim)
+        lim_space = out
 
+    # Brake Axis
+    if limits_max.brake != limits_min.brake:
+        d = (limits_max.brake - limits_min.brake) / (n_per_axis-1)
+        out = []
+        for i in range(n_per_axis):
+            for lim in lim_space:
+                lim = copy.copy(lim) # clone, so every point is its own object
+                lim.brake = limits_min.brake + d * i
+                out.append(lim)
+        lim_space = out
+
+ 
     # 2. Run search
     track = "2022 Michigan Endurance June - One Lap.csv"
 
@@ -45,6 +58,7 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
         return {
             "power": lim.power,
             "accel": lim.accel, #m/s2, convert back into Nm
+            "brake": lim.brake, #m/s2, convert back into Nm
             "energy_used": out["energy_used"] / 3600, # J -> Wh
             "lap_time": out.get("lap_time", out["t"][-1]) # s, last timestamp = lap time
         }
@@ -54,7 +68,7 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
     points = []
     n_total = len(lim_space)
     n_dropped = 0
-    print(f"[scan] START: {n_total} points ({n_per_axis} accel x {n_per_axis} power)")
+    print(f"[scan] START: {n_total} points")
     wall_start = time.perf_counter()
 
     for k, lim in enumerate(lim_space, start=1):
@@ -152,6 +166,7 @@ def lap_space_visualize (points, score_function):
     energy = np.array([p["energy_used"] for p in points])            # Wh
     lap_time = np.array([p["lap_time"] for p in points])             # s
     power_kw = np.array([p["power"] for p in points]) / 1000   # kW
+    brake_g = np.array([p["brake"] for p in points]) / 9.8     # G
     accel = np.array([p["accel"] for p in points])             # m/s2
 
     # marker size: 30 (lowest accel limit) to 150 (highest)
@@ -177,10 +192,11 @@ def lap_space_visualize (points, score_function):
         ax.annotate(p["label"], (p["energy_used"], p["lap_time"]))
 
     # Lap-sim points
-    sc = ax.scatter(energy, lap_time, c=power_kw, s=sizes, cmap="plasma",
+    sc = ax.scatter(energy, lap_time, c=brake_g, s=sizes, cmap="plasma",
                     edgecolors="k", linewidths=0.4)
 
-    fig.colorbar(sc, ax=ax, label="Pack power limit (kW)")
+    #fig.colorbar(sc, ax=ax, label="Pack power limit (kW)")
+    fig.colorbar(sc, ax=ax, label="Brake limit (G)")
 
 
     # == Score surface  ==
@@ -239,20 +255,23 @@ if __name__ == "__main__":
     car.mass = 285 # kg
     car.FDR = 3.71
     car.wheelR = 0.2  # m
+    car.coeff_rolling_resistance = 0.016 
+    car.coeff_drag_area = 1.38
 
     # Define seach space
     limit_min = lap_sim.LapLimits()
     limit_min.lat = 1.8 * 9.8
     limit_min.lon = 1.8 * 9.8
-    limit_min.brake = 1.7 * 9.8
+    limit_min.brake = 0.7 * 9.8
     limit_min.accel = 100 * car.FDR / (car.mass * car.wheelR)
-    limit_min.power = 60e3   # W
+    limit_min.power = 80e3   # W
     limit_min.motor = 5000   # rpm
     limit_min.regen_torque = -30 # Nm
 
     limit_max = copy.copy(limit_min)
     limit_max.accel = 200 * car.FDR / (car.mass * car.wheelR)
     limit_max.power = 80e3   # W
+    limit_max.brake = 1.7 * 9.8
 
     # Run
     points = lap_space_scan(limit_min, limit_max, 10, car)
