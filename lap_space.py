@@ -102,8 +102,6 @@ def score_function (energy, lap_time):
 
 
 
-
-
 def lap_space_visualize (points, score_function):
     # Plots:
     # - Plot lap_time over energy_used as a scatter plot
@@ -132,10 +130,28 @@ def lap_space_visualize (points, score_function):
             "lap_time": 62.5,
         },
     ]
-    Mk11_comp = {
-        "energy_used": 138.7,
-        "lap_time": 90.4,
-    }
+    other_points = [
+        {
+            "energy_used": 138.7,
+            "lap_time": 90.4,
+            "label": "Mk11"
+        },
+        {
+            "energy_used":  241,
+            "lap_time": 59.65,
+            "label": "OSU"
+        },
+        {
+            "energy_used":  148,
+            "lap_time": 65.19,
+            "label": "UPitt"
+        },
+        {
+            "energy_used":  212,
+            "lap_time": 63.4,
+            "label": "SLO"
+        },
+    ]
 
     energy = np.array([p["energy_used"] for p in points])            # Wh
     lap_time = np.array([p["lap_time"] for p in points])             # s
@@ -153,14 +169,16 @@ def lap_space_visualize (points, score_function):
     fig, ax = plt.subplots(figsize=(9, 6))
     
     # Non-lap-sim points
-    sc = ax.scatter(
+    ax.scatter(
         [p["energy_used"] for p in AS_points], 
         [p["lap_time"] for p in AS_points],
         c="r", marker='x', label="AS Mk11")
-    sc = ax.scatter(
-        [Mk11_comp["energy_used"]], 
-        [Mk11_comp["lap_time"]], 
-        c="c", marker='x', label="Mk11 comp")
+    ax.scatter(
+        [p["energy_used"] for p in other_points], 
+        [p["lap_time"] for p in other_points],
+        c="b", marker='x')
+    for p in other_points:
+        ax.annotate(p["label"], (p["energy_used"], p["lap_time"]))
 
     # Lap-sim points
     sc = ax.scatter(energy, lap_time, c=power_kw, s=sizes, cmap="plasma",
@@ -222,7 +240,7 @@ if __name__ == "__main__":
 
     # Define Car
     car = lap_sim.Car()
-    car.mass = 225 # kg
+    car.mass = 285 # kg
     car.FDR = 3.71
     car.wheelR = 0.2  # m
 

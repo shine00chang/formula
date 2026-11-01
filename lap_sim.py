@@ -33,7 +33,9 @@ LOG_INTERVAL_S = 5.0      # s of *simulated* time between console logs
 MAX_SIM_TIME = 1200.0     # s, safety stop if the sim stalls (e.g. lap starts in a corner)
 CORNER_ENTRY_TOL = 1.02   # warn if corner entry speed is >2% over the corner's max speed
 TRACK_WIDTH = 2           # m, to determine racing line
+MIN_STRAIGHT = 10.0       # m, a turn only gets a racing line if the straights on both sides are at least this long
 
+PSI0 = -np.pi/3
 
 class Car:
     mass: float  # kg
@@ -121,6 +123,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
                 sections.append({"length_track": length, "radius_track": radius, "type": sec_type})
         return sections
 
+
     # Racing arc for a turn of radius R0 and length S0 (turn angle theta = S0 / R0), entering and
     # exiting on the outside edge of the track, tangent to the straights on both sides.
     # s = distance before the turn's entry that the car starts turning (and, by symmetry, the
@@ -133,6 +136,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
     # Returns Ro, So, s.
     def racing_line(R0, S0, smax):
         theta = S0 / R0
+
         if theta >= np.pi:  # edges are parallel (or diverge): no tangent run-up, keep the track geometry
             return R0, S0, 0.0
 
@@ -145,7 +149,6 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
 
     # Add a "v_max" parameter to every section, and find the racing line of every turn
     def precompute(sections):
-        MIN_STRAIGHT = 10.0  # m, a turn only gets a racing line if the straights on both sides are at least this long
         n = len(sections)
 
         # Pass 1: every section starts from the raw track geometry.
@@ -178,6 +181,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
                 # 1. the run-up is limited by half of each neighboring straight (the other half
                 #    belongs to the turn on that straight's other side), the same on both sides
                 smax = min(prev_sec["length_track"], next_sec["length_track"]) / 2
+
                 # 2. racing arc, tangent to the straights, on the outside edge at entry and exit
                 Ro, So, s = racing_line(R0, S0, smax)
             else:
@@ -205,7 +209,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
     #  - an upcoming section j starting d meters ahead caps speed at sqrt(v_j^2 + 2*|brake|*d)
     # Sections are scanned only until they are too far away to matter.
     def speed_cap(section_idx, traveled):
-
+        
         brake = abs(limits.brake)
         cap = sections[section_idx]["v_max"]
         d = max(0.0, sections[section_idx]["length"] - traveled)  # distance to the end of this section
@@ -233,9 +237,6 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
     # == Time stepping ==
     log_every = int(round(LOG_INTERVAL_S / DT))
     wall_start = time.perf_counter()
-
-    for s in sections:
-        print(s)
 
     while state.section_idx < n_sections:
         if len(states) * DT > MAX_SIM_TIME:  # simulated time = steps taken * DT
@@ -413,7 +414,7 @@ def lap_sim_visualize(data):
         D = TRACK_WIDTH / 2
         ds = 0.25
         P = np.zeros(2)   # centerline position
-        psi = 0.0         # heading
+        psi = PSI0         # heading
         path1 = (P + D * perp(psi))[None, :]   # left edge, starts at the first point
         path2 = (P - D * perp(psi))[None, :]   # right edge
 
@@ -463,7 +464,7 @@ def lap_sim_visualize(data):
         dots = []
         P = np.zeros(2)
         D = 0
-        psi = 0.0
+        psi = PSI0
         for sec in sections:
             L0 = sec["length_track"]
             R0 = sec["radius_track"]
@@ -527,15 +528,8 @@ def lap_sim_visualize(data):
         k = np.clip(np.searchsorted(path_dist, distances, side="right"), 0, len(path_dist) - 1)
         x = np.interp(distances, path_dist, path[:, 0])
         y = np.interp(distances, path_dist, path[:, 1])
-        print(path_dist[:100])
-        print(distances[:100])
-        print(path[:100, 0])
-        print('x: ', x[:100])
-        print('k: ', k[:100])
-
         dots = np.array(dots)
         points = np.column_stack([x, y]).reshape(-1, 1, 2)
-        print(points)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
         return segments, dots 
@@ -583,8 +577,8 @@ if __name__ == "__main__":
     print("==Lap Sim==")
 
     car = Car()
-    car.mass = 225 # kg
-    car.FDR = 3.71
+    car.mass = 285 # kg
+    car.FDR = 3.91
     car.wheelR = 0.2  # m
 
     limit = LapLimits()
