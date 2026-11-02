@@ -27,6 +27,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 
+from motor_efficiency import F as motor_efficiency
+from inverter_loss import inverter_loss
+
 # == Global sim settings ==
 DT = 0.01                 # s, time step
 LOG_INTERVAL_S = 5.0      # s of *simulated* time between console logs
@@ -544,8 +547,10 @@ def lap_sim_powertrain(car, data, *, verbose=True):
     wheel_power = data["torque"] * data["rpm"] * 2 * np.pi / 60
 
     # == pack math ==
-    efficiency = 0.95 
-    pack_power = np.where(wheel_power >= 0, wheel_power / efficiency, wheel_power * efficiency)
+    motor_e = motor_efficiency(data["rpm"], data["torque"])
+    # TODO: the exact correlation involves voltage and current, which I don't want to solve for right now.
+    inverter_power = 500
+    pack_power = np.where(wheel_power >= 0, wheel_power / motor_e + inverter_power, wheel_power * motor_e - inverter_power)
     energy_used = float(np.sum(pack_power) * dt)  # J
 
     # == log results ==
