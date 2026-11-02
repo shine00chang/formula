@@ -48,6 +48,7 @@ class Car:
     wheelR: float  # m
     coeff_rolling_resistance: float
     coeff_drag_area: float # Cd * m2
+    drivetrain_eff: float
 
 
 class LapLimits:
@@ -66,10 +67,9 @@ class LapLimits:
         if omega < 1e-9:
             return math.inf  # no power limit at standstill; tire limit (accel) takes over
 
-        # pack limit -> mechanical power available at the motor
-        mech_power_limit = self.power * 0.95 
-        motor_torque = mech_power_limit / omega
-        wheel_force = motor_torque * car.FDR / car.wheelR
+        # 0.95 represent the estimated motor efficiency at this top end.
+        motor_torque = self.power * 0.95  / omega
+        wheel_force = motor_torque * car.FDR / car.wheelR * car.drivetrain_eff
         return wheel_force / car.mass
 
 
@@ -544,13 +544,14 @@ def lap_sim_powertrain(car, data, *, verbose=True):
     # 3. Energy consumption: int( pack power * dt )
     #    - factor in regen. if torque < 0, then integrate a negative step
     dt = float(np.mean(np.diff(data["t"])))
-    wheel_power = data["torque"] * data["rpm"] * 2 * np.pi / 60
+    motor_power = data["torque"] * data["rpm"] * 2 * np.pi / 60 / car.drivetrain_eff
 
     # == pack math ==
-    motor_e = motor_efficiency(data["rpm"], data["torque"])
     # TODO: the exact correlation involves voltage and current, which I don't want to solve for right now.
     inverter_power = 500
-    pack_power = np.where(wheel_power >= 0, wheel_power / motor_e + inverter_power, wheel_power * motor_e - inverter_power)
+    motor_e = motor_efficiency(data["rpm"], data["torque"])
+    pack_power = np.where(motor_power >= 0, motor_power / motor_e + inverter_power, motor_power * motor_e - inverter_power)
+
     energy_used = float(np.sum(pack_power) * dt)  # J
 
     # == log results ==
@@ -565,7 +566,6 @@ def lap_sim_powertrain(car, data, *, verbose=True):
     # == output ==
     out = {
         **data,
-        "wheel_power": wheel_power,
         "pack_power": pack_power,
         "energy_used": energy_used,
     }
@@ -795,12 +795,13 @@ if __name__ == "__main__":
     car.wheelR = 0.2  # m
     car.coeff_rolling_resistance = 0.016 
     car.coeff_drag_area = 1.38 # m2
+    car.drivetrain_eff = 0.928
 
     limit = LapLimits()
     limit.lat = 1.8 * 9.8
     limit.lon = 1.8 * 9.8
     limit.brake = 1 * 9.8
-    limit.accel = 200 * car.FDR / (car.mass * car.wheelR)
+    limit.accel = 200 * car.drivetrain_eff * car.FDR / (car.mass * car.wheelR)
     limit.power = 80e3   # W
     limit.motor = 5000   # rpm
     limit.regen_torque = -30 # Nm

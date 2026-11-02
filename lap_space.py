@@ -257,6 +257,7 @@ if __name__ == "__main__":
     car.wheelR = 0.2  # m
     car.coeff_rolling_resistance = 0.016 
     car.coeff_drag_area = 1.38
+    car.drivetrain_eff = 0.928
 
     # Define seach space
     limit_min = lap_sim.LapLimits()
