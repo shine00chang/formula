@@ -16,17 +16,20 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
         raise ValueError("n_per_axis must be at least 2 (one point for the min, one for the max)")
     
     # 1. Create search space
-    lim_space = []
+    lim_space = [limits_min]
 
     # Accel Axis
     d = (limits_max.accel - limits_min.accel) / (n_per_axis-1)
-    for i in range(n_per_axis):
-        lim = copy.copy(limits_min) # clone
-        lim.accel = limits_min.accel + d * i
-        lim_space.append(lim)
+    if limits_max.accel != limits_min.accel:
+        print("[scan] using axis accel")
+        for i in range(n_per_axis):
+            lim = copy.copy(limits_min) # clone
+            lim.accel = limits_min.accel + d * i
+            lim_space.append(lim)
 
     # Power Axis
     if limits_max.power != limits_min.power:
+        print("[scan] using axis power")
         d = (limits_max.power - limits_min.power) / (n_per_axis-1)
         out = []
         for i in range(n_per_axis):
@@ -38,6 +41,7 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
 
     # Brake Axis
     if limits_max.brake != limits_min.brake:
+        print("[scan] using axis brake")
         d = (limits_max.brake - limits_min.brake) / (n_per_axis-1)
         out = []
         for i in range(n_per_axis):
@@ -47,7 +51,30 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
                 out.append(lim)
         lim_space = out
 
- 
+    # Max Speed Axis
+    if limits_max.motor != limits_min.motor:
+        print("[scan] using axis motor")
+        d = (limits_max.motor - limits_min.motor) / (n_per_axis-1)
+        out = []
+        for i in range(n_per_axis):
+            for lim in lim_space:
+                lim = copy.copy(lim) # clone, so every point is its own object
+                lim.motor = limits_min.motor + d * i
+                out.append(lim)
+        lim_space = out
+
+    # Regen Axis
+    if limits_max.regen_torque != limits_min.regen_torque:
+        print("[scan] using axis regen")
+        d = (limits_max.regen_torque - limits_min.regen_torque) / (n_per_axis-1)
+        out = []
+        for i in range(n_per_axis):
+            for lim in lim_space:
+                lim = copy.copy(lim) # clone, so every point is its own object
+                lim.regen_torque = limits_min.regen_torque + d * i
+                out.append(lim)
+        lim_space = out
+
     # 2. Run search
     track = "2022 Michigan Endurance June - One Lap.csv"
 
@@ -59,6 +86,8 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
             "power": lim.power,
             "accel": lim.accel, #m/s2, convert back into Nm
             "brake": lim.brake, #m/s2, convert back into Nm
+            "motor": lim.motor, #m/s2, convert back into Nm
+            "regen_torque": lim.regen_torque, #Nm
             "energy_used": out["energy_used"] / 3600, # J -> Wh
             "lap_time": out.get("lap_time", out["t"][-1]) # s, last timestamp = lap time
         }
@@ -116,7 +145,7 @@ def score_function (energy, lap_time):
 
 
 
-def lap_space_visualize (points, score_function):
+def lap_space_visualize (points, score_function, size_axis="power", color_axis="power"):
     # Plots:
     # - Plot lap_time over energy_used as a scatter plot
     #   Color shows the power limit and marker size shows the accel limit, so each dot can be traced
@@ -128,15 +157,15 @@ def lap_space_visualize (points, score_function):
     # Data points from other sources. Plotted as reference
     AS_points = [
         {
-            "energy_used": 289,
+            "energy_used": 459,
             "lap_time": 61.8,
         },
         {
-            "energy_used": 162,
+            "energy_used": 258,
             "lap_time": 67.6,
         },
         {
-            "energy_used": 219,
+            "energy_used": 349,
             "lap_time": 62.5,
         },
     ]
@@ -161,29 +190,56 @@ def lap_space_visualize (points, score_function):
             "lap_time": 63.4,
             "label": "SLO"
         },
+        {
+            "energy_used":  212,
+            "lap_time": 69,
+            "label": "UPenn"
+        },
+        {
+            "energy_used":  240,
+            "lap_time": 67.042,
+            "label": "CMU"
+        },
+        {
+            "energy_used":  189,
+            "lap_time": 69.78,
+            "label": "UWM"
+        },
+        {
+            "energy_used":  266,
+            "lap_time": 70.11,
+            "label": "Texas A&M"
+        },
     ]
 
     energy = np.array([p["energy_used"] for p in points])            # Wh
     lap_time = np.array([p["lap_time"] for p in points])             # s
-    power_kw = np.array([p["power"] for p in points]) / 1000   # kW
-    brake_g = np.array([p["brake"] for p in points]) / 9.8     # G
-    accel = np.array([p["accel"] for p in points])             # m/s2
+    axes = {
+        "power": np.array([p["power"] for p in points]) / 1000,   # kW
+        "brake": np.array([p["brake"] for p in points]) / 9.8,     # G
+        "accel": np.array([p["accel"] for p in points]) / 9.8, # G
+        "motor": np.array([p["motor"] for p in points]),             # rpm
+        "regen": np.array([p["regen_torque"] for p in points]),             # Nm
+    }
+    axes_label = {
+        "power": "Power (kW)",
+        "brake": "Braking Acceleration (G)",
+        "accel": "Acceleration (G)",
+        "motor": "Max Speed (rpm)",
+        "regen": "Regen Torque (Nm)"
+    }
 
-    # marker size: 30 (lowest accel limit) to 150 (highest)
-    a_min, a_max = accel.min(), accel.max()
-    if a_max > a_min:
-        sizes = 30 + 120 * (accel - a_min) / (a_max - a_min)
-    else:
-        sizes = np.full_like(accel, 80.0)
+
 
     # == Plotting ==
     fig, ax = plt.subplots(figsize=(9, 6))
-    
-    # Non-lap-sim points
-    ax.scatter(
-        [p["energy_used"] for p in AS_points], 
-        [p["lap_time"] for p in AS_points],
-        c="r", marker='x', label="AS Mk11")
+    ax.set_box_aspect(1)
+
+    # # Non-lap-sim points
+    # ax.scatter(
+    #     [p["energy_used"] for p in AS_points], 
+    #     [p["lap_time"] for p in AS_points],
+    #     c="r", marker='x', label="AS Mk11")
     ax.scatter(
         [p["energy_used"] for p in other_points], 
         [p["lap_time"] for p in other_points],
@@ -192,12 +248,22 @@ def lap_space_visualize (points, score_function):
         ax.annotate(p["label"], (p["energy_used"], p["lap_time"]))
 
     # Lap-sim points
-    sc = ax.scatter(energy, lap_time, c=brake_g, s=sizes, cmap="plasma",
+    # marker size: 30 (lowest accel limit) to 150 (highest)
+    ax_min, ax_max = axes[size_axis].min(), axes[size_axis].max()
+    if ax_max > ax_min:
+        sizes = 30 + 120 * (axes[size_axis] - ax_min) / (ax_max - ax_min)
+    else:
+        sizes = np.full_like(axes[size_axis], 80.0)
+    # size legend
+    if ax_max > ax_min:
+        for val, size in ((ax_min, 30), (0.5 * (ax_min + ax_max), 90), (ax_max, 150)):
+            ax.scatter([], [], s=size, color="gray", edgecolors="k", linewidths=0.4, label=f"{val:.1f}")
+        ax.legend(labelspacing=0.1, title=axes_label[size_axis], title_fontsize=10,
+                  bbox_to_anchor=(-0.1, 0.1), loc="lower right", borderaxespad=0)
+
+    sc = ax.scatter(energy, lap_time, c=axes[color_axis], s=sizes, cmap="plasma",
                     edgecolors="k", linewidths=0.4)
-
-    #fig.colorbar(sc, ax=ax, label="Pack power limit (kW)")
-    fig.colorbar(sc, ax=ax, label="Brake limit (G)")
-
+    fig.colorbar(sc, ax=ax, label=axes_label[color_axis])
 
     # == Score surface  ==
     xlim = ax.get_xlim()
@@ -231,13 +297,6 @@ def lap_space_visualize (points, score_function):
 
     fig.colorbar(score_surface, ax=ax, label="score")
 
-    # size legend (lowest / middle / highest accel limit)
-    if a_max > a_min:
-        for val, size in ((a_min, 30), (0.5 * (a_min + a_max), 90), (a_max, 150)):
-            ax.scatter([], [], s=size, color="gray", edgecolors="k", linewidths=0.4,
-                       label=f"accel limit {val:.1f} m/s²")
-        ax.legend(loc="best", title="Marker size", labelspacing=1.2)
-
     ax.set_xlabel("Energy used (Wh)")
     ax.set_ylabel("Lap time (s)")
     ax.set_title("Lap time vs. energy used")
@@ -264,16 +323,16 @@ if __name__ == "__main__":
     limit_min.lat = 1.8 * 9.8
     limit_min.lon = 1.8 * 9.8
     limit_min.brake = 0.7 * 9.8
-    limit_min.accel = 100 * car.FDR / (car.mass * car.wheelR)
-    limit_min.power = 80e3   # W
-    limit_min.motor = 5000   # rpm
+    limit_min.accel = 200 * car.FDR / (car.mass * car.wheelR)
+    limit_min.power = 75e3   # W
+    limit_min.motor = 6000   # rpm
     limit_min.regen_torque = -30 # Nm
 
     limit_max = copy.copy(limit_min)
-    limit_max.accel = 200 * car.FDR / (car.mass * car.wheelR)
-    limit_max.power = 80e3   # W
+    #limit_max.accel = 200 * car.FDR / (car.mass * car.wheelR)
     limit_max.brake = 1.7 * 9.8
+    limit_max.regen_torque = -70 # Nm
 
     # Run
     points = lap_space_scan(limit_min, limit_max, 10, car)
-    lap_space_visualize(points, score_function)
+    lap_space_visualize(points, score_function, "brake", "regen")
