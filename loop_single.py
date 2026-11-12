@@ -6,7 +6,7 @@ from loop_components import emrax228, cm200dx
 from loop_helper import solve_system, draw_system, p_minor, p_major, in_to_m
 from radiator_helper import sim_rad_in_loop
 
-def using(radiator, pump, fan, plot=True):
+def using(radiator, pump, fan, heat, plot=True):
     def system(lpm):
         return (
             cm200dx(lpm) + emrax228(lpm) + radiator.flow(lpm)
@@ -25,7 +25,7 @@ def using(radiator, pump, fan, plot=True):
 
     pump_op_power = pump_p(system_op_lpm)
 
-    Q_cold_op = sim_rad_in_loop(radiator, 1500 * 1.25, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0, plot)
+    Q_cold_op = sim_rad_in_loop(radiator, heat, system_op_lpm * (1.0 / 60000.0), 50.0, 20.0, plot)
     fan_cfm = Q_cold_op / 0.0004719474
     fan_op_power = fan.power(fan_cfm)
     system_op_power = pump_op_power + fan_op_power
@@ -76,5 +76,5 @@ if __name__ == "__main__":
     import pumps
     import fans
 
-    using(radiators.blackice_280, pumps.boschePCE1, fans.orion1238, True)
+    using(radiators.blackice_280, pumps.boschePCE1_tap_water, fans.orion1238, 2000 * 1.25, True)
 

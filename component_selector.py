@@ -6,6 +6,8 @@ import radiators
 import fans
 import pumps
 
+HEAT = 2000 * 1.25
+
 def generate_performance_table(loop_module, table_title):
     # Fetch lists of radiators and pumps
     rads = radiators.radiator_list
@@ -36,7 +38,7 @@ def generate_performance_table(loop_module, table_title):
         
         for pump in pmps:
             # Invoke the using() function with radiator, pump, fan, and boolean flag
-            metrics = loop_module.using(rad, pump, fans.qfr1212, False)
+            metrics = loop_module.using(rad, pump, fans.qfr1212, HEAT, False)
             
             # Format the 3-element tuple into a single string cell
             # Assuming the metrics are floats; formatted to 2 decimal places
@@ -53,8 +55,8 @@ def generate_performance_table(loop_module, table_title):
 
 
 if __name__ == "__main__":
-    print("using qfr1212 fan")
+    print(f"[selector] Using Heat Load = {HEAT} W")
     # Create the three tables, one for each type of loop
-    generate_performance_table(loop_branched, "BRANCHED")
-    generate_performance_table(loop_double, "DOUBLE")
+    # generate_performance_table(loop_branched, "BRANCHED")
+    # generate_performance_table(loop_double, "DOUBLE")
     generate_performance_table(loop_single, "SINGLE")
