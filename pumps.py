@@ -20,6 +20,7 @@ class Pump:
     flow = lambda: 0
     power = lambda: 0
     
+# https://www.bosch-ibusiness.com/products/product-categories/auxiliary-pumps-and-valves/
 # datasheet: https://www.bosch-ibusiness.com/en-2/products/product-categories/auxiliary-pumps-and-valves/pce-0392024058/pce-0392024058.pdf
 class boschePCE1(Pump):
     flow = _flow_fit(np.array([
@@ -31,18 +32,26 @@ class boschePCE1(Pump):
     ]))
     power = lambda lpm: 6 * 12 if lpm > 26.66 else (3 + 3 * lpm / 26.66) *12;
 
-pump_list = [boschePCE1]
 
+# datasheet: https://www.bosch-ibusiness.com/products/product-categories/auxiliary-pumps-and-valves/pce-0392024900/
+class boschePCE1_tap_water(Pump):
+    flow = _flow_fit(np.array([
+        [0, 0.59],
+        [6.66, 0.58],
+        [13.3, 0.55],
+        [20, 0.48],
+        [26.7, 0.3],
+    ]))
+    power = lambda lpm: 4 * 12 if lpm > 26.66 else (2 + 2 * lpm / 26.66) *12;
 
 # datasheet: https://www.bosch-ibusiness.com/en-2/products/product-categories/auxiliary-pumps-and-valves/pce-039202453f/pce-039202453f.pdf
-class boschePCE2(Pump):
+class boschePCE2_L(Pump):
     flow = _flow_fit(np.array([
         [0, 0.78],
         [12.5, 0.8],
         [41.6, 0.28]
     ]))
     power = lambda lpm: 5 * 12 if lpm > 13.3 else (3 + 2 * lpm / 13.3) * 12;
-
 
 # https://www.topsflo.com/special-pumps/electric-auto-circulation-pump.html
 # https://daviescraig.com.au/product/ebp40-electric-booster-pump-12v-9040
@@ -79,4 +88,4 @@ class dc56e(Pump):
     ]))
     power = lambda x: 4.5 * 12
 
-pump_list = [boschePCE1, boschePCE2, ebp40, vp62a, dc56e]
+pump_list = [boschePCE1, boschePCE1_tap_water, boschePCE2_L, ebp40, vp62a]
