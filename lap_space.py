@@ -1,5 +1,7 @@
 import copy
+import csv
 import time
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
@@ -64,14 +66,13 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
         lim_space = out
 
     # Regen Axis
-    if limits_max.regen_torque != limits_min.regen_torque:
+    if isinstance(limits_min.regen_torque_max, list):
         print("[scan] using axis regen")
-        d = (limits_max.regen_torque - limits_min.regen_torque) / (n_per_axis-1)
         out = []
-        for i in range(n_per_axis):
+        for f in limits_min.regen_torque_max:
             for lim in lim_space:
                 lim = copy.copy(lim) # clone, so every point is its own object
-                lim.regen_torque = limits_min.regen_torque + d * i
+                lim.regen_torque_max = f
                 out.append(lim)
         lim_space = out
 
@@ -81,15 +82,19 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
     # Convenience function maps relevant inputs and outputs only relevant outputs
     def lap_wrapper (lim):
         out = lap_sim.lap_sim_track(track, car, lim, verbose=False)
-        out = lap_sim.lap_sim_powertrain(car, out, verbose=False)
+        out = lap_sim.lap_sim_powertrain(car, lim, out, verbose=False)
         return {
             "power": lim.power,
             "accel": lim.accel, #m/s2, convert back into Nm
             "brake": lim.brake, #m/s2, convert back into Nm
             "motor": lim.motor, #m/s2, convert back into Nm
-            "regen_torque": lim.regen_torque, #Nm
-            "energy_used": out["energy_used"] / 3600, # J -> Wh
-            "lap_time": out.get("lap_time", out["t"][-1]) # s, last timestamp = lap time
+#            "regen_torque": lim.regen_torque, #Nm
+            "energy_used":  out["energy_used"] / 3600, # J -> Wh
+            "lap_time":     out.get("lap_time", out["t"][-1]), # s, last timestamp = lap time
+            "current_rms":  out["current_rms"],
+            "pack_heat":    out["pack_heat"],
+            "motor_heat":   out["motor_heat"],
+            "inverter_heat": out["inverter_heat"],
         }
 
     # Run search.
@@ -105,8 +110,7 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
             point = lap_wrapper(lim)
         except Exception as e:
             n_dropped += 1
-            print(f"[scan] dropped point {k}/{n_total} "
-                  f"(accel={lim.accel:.2f} m/s2, power={lim.power / 1000:.1f} kW): {e}")
+            print(f"[scan] dropped point {k}/{n_total}: {e}")
             continue
         points.append(point)
 
@@ -115,6 +119,24 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
 
     wall = time.perf_counter() - wall_start
     print(f"[scan] END: {len(points)} points kept, {n_dropped} dropped, solved in {wall:.1f} s wall time")
+
+    # Write output CSV
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"lap_space_out/lap_space_out_{timestamp}.csv"
+    print(f"[scan] writing output points in {filename}...")
+    headers = list(points[0].keys())
+    with open(filename, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=headers)
+        writer.writeheader()
+        
+        for point in points:
+            formatted = {
+                key: f"{val:.2f}" if isinstance(val, float) else val
+                for key, val in point.items()
+            }
+            writer.writerow(formatted)
+
+    print(f"[scan] writing done.")
 
     return points
 
@@ -219,7 +241,7 @@ def lap_space_visualize (points, score_function, size_axis="power", color_axis="
         "brake": np.array([p["brake"] for p in points]) / 9.8,     # G
         "accel": np.array([p["accel"] for p in points]) / 9.8, # G
         "motor": np.array([p["motor"] for p in points]),             # rpm
-        "regen": np.array([p["regen_torque"] for p in points]),             # Nm
+#        "regen": np.array([p["regen_torque"] for p in points]),             # Nm
     }
     axes_label = {
         "power": "Power (kW)",
@@ -317,6 +339,9 @@ if __name__ == "__main__":
     car.coeff_rolling_resistance = 0.016 
     car.coeff_drag_area = 1.38
     car.drivetrain_eff = 0.928
+    car.pack_voltage = lambda : 4.2 * 114
+    car.pack_IR = lambda : 0.017 * 114 / 6
+    car.charge_current_max = 9 * 6
 
     # Define seach space
     limit_min = lap_sim.LapLimits()
@@ -324,15 +349,18 @@ if __name__ == "__main__":
     limit_min.lon = 1.8 * 9.8
     limit_min.brake = 0.7 * 9.8
     limit_min.accel = 200 * car.FDR / (car.mass * car.wheelR)
-    limit_min.power = 75e3   # W
+    limit_min.power = 70e3   # W
     limit_min.motor = 6000   # rpm
-    limit_min.regen_torque = -30 # Nm
+    limit_min.regen_torque_max = [
+        lambda rpm: -car.charge_current_max * car.pack_voltage() / (2 * np.pi / 60 * rpm),
+        lambda rpm: np.ones(np.shape(rpm)) * -30,
+        lambda rpm: np.zeros(np.shape(rpm))
+    ]
 
     limit_max = copy.copy(limit_min)
     #limit_max.accel = 200 * car.FDR / (car.mass * car.wheelR)
     limit_max.brake = 1.7 * 9.8
-    limit_max.regen_torque = -70 # Nm
 
     # Run
     points = lap_space_scan(limit_min, limit_max, 10, car)
-    lap_space_visualize(points, score_function, "brake", "regen")
+    lap_space_visualize(points, score_function, "brake", "brake")

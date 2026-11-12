@@ -50,6 +50,10 @@ class Car:
     coeff_drag_area: float # Cd * m2
     drivetrain_eff: float
 
+    pack_voltage: Callable[[], float]
+    pack_IR: Callable[[], float]
+    charge_current_max: float # A
+
 
 class LapLimits:
     lat: float    # m/s2
@@ -59,7 +63,7 @@ class LapLimits:
     accel: float  # m/s2
     power: float  # W, pack power limit
     motor: float  # rpm
-    regen_torque: float # Nm
+    regen_torque_mae: Callable[[float], float] # Nm
 
     def pack_limited_accel(self, rpm, car):
         # return maximum acceleration under the pack power limit, at that rpm
@@ -478,8 +482,8 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
         # update state: effective acceleration after clamping (keeps torque consistent with speed)
         step_dist = 0.5 * (v_old + v_new) * DT  # trapezoidal position increment
         state.a = (v_new - v_old) / DT
-        motor_force = state.a * car.mass + F_drag + F_rr
-        state.torque = max(limits.regen_torque, motor_force * car.wheelR / car.FDR)
+        force = state.a * car.mass + F_drag + F_rr
+        state.torque = force * car.wheelR
         state.v = v_new
         state.section_traveled += step_dist
         state.distance += step_dist
@@ -528,7 +532,7 @@ def lap_sim_track(track_file, car, limits, *, verbose=True):
     return out
 
 
-def lap_sim_powertrain(car, data, *, verbose=True):
+def lap_sim_powertrain(car, limit, data, *, verbose=True):
 
     def log(*args, **kwargs):
         if verbose:
@@ -538,21 +542,60 @@ def lap_sim_powertrain(car, data, *, verbose=True):
     log("=" * 60)
     log("[powertrain] START")
 
-    # 1. Wheel power: torque * motor speed (rad/s)
-    # 2. Pack power: wheel power / efficiency when driving, * efficiency when regenerating
-    #    - do not take the absolute value. keep negative torque as negative power
-    # 3. Energy consumption: int( pack power * dt )
-    #    - factor in regen. if torque < 0, then integrate a negative step
     dt = float(np.mean(np.diff(data["t"])))
-    motor_power = data["torque"] * data["rpm"] * 2 * np.pi / 60 / car.drivetrain_eff
 
-    # == pack math ==
-    # TODO: the exact correlation involves voltage and current, which I don't want to solve for right now.
+    # == Motor Power ==
+    # 1. motor torque: DT eff depends on if we are regen'ing
+    # 2. max regen torque: I = P / V = k*tau*w / V. 
+    # 3. motor power: clamp motor torque and k*tau*w
+
+    wheel_torque = data["torque"]
+    motor_torque = wheel_torque / car.FDR * np.where(wheel_torque > 0, 1/car.drivetrain_eff, car.drivetrain_eff)
+    motor_torque = np.maximum(limit.regen_torque_max(data["rpm"]), motor_torque)
+    motor_power = motor_torque * data["rpm"] * 2 * np.pi / 60
+
+    # == Find V & I ==
+    # TODO: inverter loss is a manufacturer-given function of V and I. This makes it difficult to solve in
+    # reverse. I've simplified it to assume 500W losses average, which is around the average for most run profiles
     inverter_power = 500
-    motor_e = motor_efficiency(data["rpm"], data["torque"])
+    motor_e = motor_efficiency(data["rpm"], wheel_torque / car.FDR)
     pack_power = np.where(motor_power >= 0, motor_power / motor_e + inverter_power, motor_power * motor_e - inverter_power)
 
     energy_used = float(np.sum(pack_power) * dt)  # J
+
+
+    # solve for current and voltage
+    voltage = np.zeros((len(pack_power)))
+    current = np.zeros((len(pack_power)))
+    for i, pi in enumerate(pack_power):
+        packv = car.pack_voltage();
+        packIR = car.pack_IR();
+
+        # solve for current accounting for voltage sag
+        if pi > 0:
+            r = np.roots([-packIR, packv, -pi])
+            current[i] = min(r)
+        else:
+            r = np.roots([ packIR, packv, -pi])
+            current[i] = max(r)
+
+        # calculate voltage
+        voltage[i] = pi / current[i] if current[i] != 0 else packv
+
+
+        # print(np.roots([-packIR, packv, -pi]))
+        # print(current[i], voltage[i], pi)
+        # assert False
+
+    # Very important number
+    current_rms = np.sqrt(np.mean(current**2))
+
+    # == heat loads ==
+    pack_heat = current_rms * current_rms * car.pack_IR()
+    motor_heat = np.where(motor_power >= 0, motor_power * (1-motor_e) / motor_e, -motor_power * (1-motor_e))
+    motor_heat = np.mean(motor_heat)
+    inverter_heat = inverter_loss(voltage, np.abs(current))
+    inverter_heat = np.mean(inverter_heat)
 
     # == log results ==
     drive_energy = float(np.sum(pack_power[pack_power > 0]) * dt)
@@ -561,13 +604,24 @@ def lap_sim_powertrain(car, data, *, verbose=True):
           f"({energy_used / 3600:.0f} Wh, {energy_used / 3.6e6:.3f} kWh)")
     log(f"[powertrain] drive / regen:     {drive_energy / 3600:.0f} Wh / {regen_energy / 3600:.0f} Wh")
     log(f"[powertrain] peak pack power:   {pack_power.max() / 1000:.1f} kW")
+    log(f"[powertrain] current RMS:       {current_rms:.2f} A")
+    log(f"[powertrain] heat, pack:        {pack_heat:.1f} W")
+    log(f"[powertrain] heat, motor:       {motor_heat:.1f} W")
+    log(f"[powertrain] heat, inverter:    {inverter_heat:.1f} W")
     log("[powertrain] END")
 
     # == output ==
     out = {
         **data,
+        "motor_torque": motor_torque,
         "pack_power": pack_power,
+        "voltage": voltage,
+        "current": current,
         "energy_used": energy_used,
+        "current_rms": current_rms,
+        "pack_heat": pack_heat,
+        "motor_heat": motor_heat,
+        "inverter_heat": inverter_heat,
     }
     return out
 
@@ -591,7 +645,7 @@ def lap_sim_visualize(data):
 
     ax_torque = ax_rpm.twinx()
     (rpm_line,) = ax_rpm.plot(t, data["rpm"], color="tab:blue", label="Motor speed (rpm)")
-    (torque_line,) = ax_torque.plot(t, data["torque"], color="tab:orange", label="Motor torque (Nm)")
+    (torque_line,) = ax_torque.plot(t, data["motor_torque"], color="tab:orange", label="Motor torque (Nm)")
     ax_torque.axhline(0, color="k", linewidth=0.5)
     ax_rpm.set_xlabel("Time (s)")
     ax_rpm.set_ylabel("Motor speed (rpm)", color="tab:blue")
@@ -603,13 +657,25 @@ def lap_sim_visualize(data):
     fig.tight_layout()
 
     # == Pack power over time ==
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(t, data["pack_power"] / 1000)
-    ax.axhline(0, color="k", linewidth=0.5)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Pack power (kW)")
-    ax.set_title(f"Pack power over lap (net energy {data['energy_used'] / 3.6e6:.3f} kWh)")
-    ax.grid(True, alpha=0.3)
+    fig, [ax1, ax2] = plt.subplots(nrows=2, ncols=1,figsize=(10, 4))
+    ax1.plot(t, data["pack_power"] / 1000, color="b", linewidth=1)
+    ax1.axhline(0, color="k", linewidth=0.5)
+    ax1.set_xlabel("Time (s)")
+    ax1.set_ylabel("Pack power (kW)")
+    ax1.set_title(f"Pack power over lap (net energy {data['energy_used'] / 3.6e6:.3f} kWh)")
+    ax1.grid(True, alpha=0.3)
+
+    ax3 = ax2.twinx()
+    ax3.plot(t, data["voltage"], label="voltage", color="g", linestyle='--',linewidth=1)
+    ax3.set_ylabel("Voltage (V)")
+
+    ax2.plot(t, data["current"], label="current", color="b", linewidth=1)
+    ax2.axhline(0, color="k", linewidth=0.5)
+
+    ax2.set_xlabel("Time (s)")
+    ax2.set_ylabel("Current (A)")
+    ax2.set_title(f"Pack power over lap (net energy {data['energy_used'] / 3.6e6:.3f} kWh)")
+    ax2.grid(True, alpha=0.3)
     fig.tight_layout()
 
     # == Track Plots ==
@@ -796,15 +862,20 @@ if __name__ == "__main__":
     car.coeff_rolling_resistance = 0.016 
     car.coeff_drag_area = 1.38 # m2
     car.drivetrain_eff = 0.928
+    # TODO: Technically, go off of V/SoC graph, however, thats not gonna help unless you
+    # run the lap sim for all 22 laps. Instead, just grab an eyeball voltage
+    car.pack_voltage = lambda : 4.2 * 114
+    car.pack_IR = lambda : 0.017 * 114 / 6
+    car.charge_current_max = 9 *6
 
     limit = LapLimits()
     limit.lat = 1.8 * 9.8
     limit.lon = 1.8 * 9.8
-    limit.brake = 1 * 9.8
+    limit.brake = 1.6 * 9.8
     limit.accel = 200 * car.drivetrain_eff * car.FDR / (car.mass * car.wheelR)
-    limit.power = 80e3   # W
-    limit.motor = 5000   # rpm
-    limit.regen_torque = -30 # Nm
+    limit.power = 70e3   # W
+    limit.motor = 5500   # rpm
+    limit.regen_torque_max = lambda rpm: -car.charge_current_max * car.pack_voltage() / (2 * np.pi / 60 * rpm) 
 
     # guesstimated top formula car
     # car = Car()
