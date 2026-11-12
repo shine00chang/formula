@@ -4,3 +4,5 @@ __pycache__/
 # real DAQ data tend to be huge
 datasets/real_*
 .DS_Store
+lap_space_out
+guide

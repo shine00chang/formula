@@ -8,6 +8,7 @@ import matplotlib.ticker as ticker
 import numpy as np
 
 import lap_sim 
+from models import mk12
 
 # First creates the search space. 
 # Given search space limits and axis fidelity, creates limit objects where each axis A spans 
@@ -81,8 +82,8 @@ def lap_space_scan (limits_min, limits_max, n_per_axis, car):
 
     # Convenience function maps relevant inputs and outputs only relevant outputs
     def lap_wrapper (lim):
-        out = lap_sim.lap_sim_track(track, car, lim, verbose=False)
-        out = lap_sim.lap_sim_powertrain(car, lim, out, verbose=False)
+        out = lap_sim.sim_track(track, car, lim, verbose=False)
+        out = lap_sim.sim_powertrain(car, lim, out, verbose=False)
         return {
             "power": lim.power,
             "accel": lim.accel, #m/s2, convert back into Nm
@@ -331,36 +332,25 @@ def lap_space_visualize (points, score_function, size_axis="power", color_axis="
 if __name__ == "__main__":
     print("==Lap Optimizer==")
 
-    # Define Car
-    car = lap_sim.Car()
-    car.mass = 285 # kg
-    car.FDR = 3.71
-    car.wheelR = 0.2  # m
-    car.coeff_rolling_resistance = 0.016 
-    car.coeff_drag_area = 1.38
-    car.drivetrain_eff = 0.928
-    car.pack_voltage = lambda : 4.2 * 114
-    car.pack_IR = lambda : 0.017 * 114 / 6
-    car.charge_current_max = 9 * 6
-
     # Define seach space
     limit_min = lap_sim.LapLimits()
     limit_min.lat = 1.8 * 9.8
     limit_min.lon = 1.8 * 9.8
-    limit_min.brake = 0.7 * 9.8
-    limit_min.accel = 200 * car.FDR / (car.mass * car.wheelR)
+    limit_min.brake = 0.4 * 9.8
+    limit_min.accel = 200 * mk12.FDR / (mk12.mass * mk12.wheelR)
     limit_min.power = 70e3   # W
-    limit_min.motor = 6000   # rpm
-    limit_min.regen_torque_max = [
-        lambda rpm: -car.charge_current_max * car.pack_voltage() / (2 * np.pi / 60 * rpm),
-        lambda rpm: np.ones(np.shape(rpm)) * -30,
-        lambda rpm: np.zeros(np.shape(rpm))
-    ]
+    limit_min.motor = 4000   # rpm
+    # limit_min.regen_torque_max = [
+    #     lambda rpm: -mk12.charge_current_max * mk12.pack_voltage() / (2 * np.pi / 60 * rpm),
+    #     lambda rpm: np.ones(np.shape(rpm)) * -40,
+    #     lambda rpm: np.zeros(np.shape(rpm))
+    # ]
+    limit_min.regen_torque_max = lambda rpm: np.ones(np.shape(rpm)) * -40
 
     limit_max = copy.copy(limit_min)
-    #limit_max.accel = 200 * car.FDR / (car.mass * car.wheelR)
-    limit_max.brake = 1.7 * 9.8
+    limit_max.brake = 1 * 9.8
+    limit_max.motor = 6000
 
     # Run
-    points = lap_space_scan(limit_min, limit_max, 10, car)
-    lap_space_visualize(points, score_function, "brake", "brake")
+    points = lap_space_scan(limit_min, limit_max, 5, mk12)
+    lap_space_visualize(points, score_function, "brake", "motor")
